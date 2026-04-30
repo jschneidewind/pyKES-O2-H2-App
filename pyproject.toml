@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simultaneous_detection"
+version = "0.1.0"
+description = "Python package for simulatenous detection of H2 and O2."
+authors = [
+    {name = "Jacob Schneidewind", email = "pyH2A.pypi@gmail.com"},
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+]
+
+[project.urls]
+"Homepage" = "https://github.com/jschneidewind/multi_timescale_model"
+"Bug Tracker" = "https://github.com/jschneidewind/multi_timescale_model/issues"
