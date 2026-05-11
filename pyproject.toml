@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "pykes_o2_h2_app"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python package for simulatenous detection of H2 and O2."
 authors = [
     {name = "Jacob Schneidewind", email = "pyH2A.pypi@gmail.com"},
