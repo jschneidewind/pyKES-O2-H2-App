@@ -20,5 +20,5 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/jschneidewind/multi_timescale_model"
-"Bug Tracker" = "https://github.com/jschneidewind/multi_timescale_model/issues"
+"Homepage" = "https://github.com/jschneidewind/pykes_o2_h2_app"
+"Bug Tracker" = "https://github.com/jschneidewind/pykes_o2_h2_app"
