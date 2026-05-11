@@ -3073,7 +3073,7 @@ wheels = [
 [[package]]
 name = "pykes"
 version = "0.1.2"
-source = { directory = "../pyKES/pyKES" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py", version = "3.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "h5py", version = "3.14.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
@@ -3098,17 +3098,9 @@ dependencies = [
     { name = "streamlit", version = "1.50.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
     { name = "streamlit", version = "1.57.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "h5py" },
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "openpyxl" },
-    { name = "pandas" },
-    { name = "plotly" },
-    { name = "scipy" },
-    { name = "streamlit" },
+sdist = { url = "https://files.pythonhosted.org/packages/bc/38/a9bb0f05438dfb46cf04fd4025c3aaa7df7aa9ca7ee73a011e2357b68a0a/pykes-0.1.2.tar.gz", hash = "sha256:07a158e5ed7656e4d7623f330431bfab994acac079b100356f71ff32b1fd8622", size = 61388, upload-time = "2026-05-11T14:00:53.337Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/9b/92dd1d8da1e87f9fae85585956a85dd5b33d84e3a7188e336b3d165588d1/pykes-0.1.2-py3-none-any.whl", hash = "sha256:341e3c1e35ae355767046f585be06023919a3bbaac120da52df5059f9a91f50d", size = 73412, upload-time = "2026-05-11T14:00:51.963Z" },
 ]
 
 [[package]]
@@ -3138,7 +3130,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.7.5" },
     { name = "numpy", specifier = ">=1.24.4" },
     { name = "pandas", specifier = ">=2.0.3" },
-    { name = "pykes", directory = "../pyKES/pyKES" },
+    { name = "pykes", specifier = ">=0.1.2" },
     { name = "scipy", specifier = ">=1.10.1" },
 ]
 

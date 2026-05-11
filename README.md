@@ -1,6 +1,6 @@
 # Simultaneous detection O2/H2
 
-This repository contains the code for the project "Insights into overall photocatalytic water splitting through simultaneous in situ H2 and O2 measurements". It requires the library "pyKES", which is available at https://github.com/jschneidewind/pyKES. 
+This repository contains the code for the project "Insights into overall photocatalytic water splitting through simultaneous in situ H2 and O2 measurements". It requires the library "pyKES" from PyPI with minimum version 0.1.2 (`pip install "pykes>=0.1.2"`).
 
 ## Workflow
 
