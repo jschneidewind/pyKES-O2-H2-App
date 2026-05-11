@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "simultaneous_detection"
+name = "pykes_o2_h2_app"
 version = "0.1.0"
 description = "Python package for simulatenous detection of H2 and O2."
 authors = [
@@ -13,8 +13,16 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
+    "matplotlib>=3.7.5",
+    "numpy>=1.24.4",
+    "pandas>=2.0.3",
+    "pykes",
+    "scipy>=1.10.1",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/jschneidewind/multi_timescale_model"
 "Bug Tracker" = "https://github.com/jschneidewind/multi_timescale_model/issues"
+
+[tool.uv.sources]
+pykes = { path = "../pyKES/pyKES" }
