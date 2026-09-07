@@ -14,8 +14,8 @@ Supported uploads include O2 and H2 data for liquid-phase and O2 data for gas-ph
 
 ## Requirements
 
-- Python 3.8 or newer
-- `pyKES>=0.1.2`
+- Python 3.9 or newer
+- `pyKES>=0.2.4`
 - `numpy>=1.24.4`
 - `pandas>=2.0.3`
 - `scipy>=1.10.1`
@@ -51,6 +51,26 @@ python -m http.server 8000
 ```
 
 Then open `http://localhost:8000` in a browser.
+
+## Versioning
+
+pyKES version
+
+* Raising floor for pyKES dependency in [`pyproject.toml`](pyproject.toml), then
+```bash
+uv lock --refresh
+uv sync
+```
+
+App version
+
+* Updating version in [`pyproject.toml`](pyproject.toml)
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+* Creating release from tag in GitHub
+
 
 ## Repository Layout
 

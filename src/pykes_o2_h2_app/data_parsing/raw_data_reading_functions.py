@@ -1,4 +1,5 @@
 import pandas as pd
+import io
 
 def reading_H2_file(file_H2, mode = 'liquid'):
     '''
@@ -15,75 +16,70 @@ def reading_H2_file(file_H2, mode = 'liquid'):
         H2_temp = 0
 
     raw_data_dict = {
-            'H2_time_s': time_s,
-            'H2_temperature': H2_temp}
+            'time_s': time_s,
+            'time_unit': 's',
+            'temperature': H2_temp}
     
     if mode == 'liquid':
         H2_umol_L = raw_data['Sensor 1 - H2 (μmol/L)'].to_numpy()
-        raw_data_dict['H2_umol_L'] = H2_umol_L
+        raw_data_dict['measurement_raw'] = H2_umol_L
+        raw_data_dict['measurement_unit'] = 'umol/L'
 
     elif mode == 'gas':
         H2_Pa = raw_data['Sensor 1 - H2 (Pa)'].to_numpy()
-        raw_data_dict['H2_Pa'] = H2_Pa
-    
+        raw_data_dict['measurement_raw'] = H2_Pa
+        raw_data_dict['measurement_unit'] = 'Pa'
+
     else:
         raise ValueError("Mode must be either 'liquid' or 'gas'.")
 
     return raw_data_dict
 
-def reading_O2_file(file_O2,
-                    channel):
-    '''
-	Reading data from FireStingO2 files. 
-	channel 1 = gas phase O2 on channel 1
-	channel 2 = liquid phase O2 on channel 2
-	channel 3 = liquid phase O2 on channel 1
-	channel 4 = gas phase O2 on channel 2
-	channel 5 = gas phase O2 on channel 1 with updated naming convention
-	'''
 
-    channel_mapping = {1: {'O2': 'Oxygen (%O2) [A Ch.1 Main]', 
-						   'dt': ' dt (s) [A Ch.1 Main]',
-						   'Temp': 'Sample Temp. (°C) [A Ch.1 CompT]'},
-					   2: {'O2': 'Oxygen (µmol/L) [A Ch.2 Main]',
-					   	   'dt': ' dt (s) [A Ch.2 Main]',
-					   	   'Temp': 'Sample Temp. (°C) [A Ch.2 CompT]'},
-					   3: {'O2': 'Oxygen (µmol/L) [A Ch.1 Main]', 
-						   'dt': ' dt (s) [A Ch.1 Main]',
-						   'Temp': 'Sample Temp. (°C) [A Ch.1 CompT]'},
-					   4: {'O2': 'Oxygen (%O2) [A Ch.2 Main]',
-					   	   'dt': ' dt (s) [A Ch.2 Main]',
-					   	   'Temp': 'Sample Temp. (°C) [A Ch.2 CompT]'},
-					   5: {'O2': 'Oxygen (%O2) [ Ch.1 Main]',
-							'dt': ' dt (s) [ Ch.1 Main]',
-							'Temp': 'Optical Temp. (°C) [ Ch.1 CompT]'}}
-				
-    data = pd.read_csv(
-                file_O2, 
-				encoding = 'ISO8859', 
-                sep = '	', 
-				skip_blank_lines = True, 
-                comment = '#', 
-                parse_dates = [0], 
-                dayfirst = True)
-	
-    data_strings = channel_mapping[channel]
+def reading_O2_file(file_O2, mode = 'liquid'):
+    """
+    Load a PyroScience Workbench oxygen log.
 
-    o2_data = data[data_strings['O2']].to_numpy()
-    time = data[data_strings['dt']].to_numpy()
+    Parameters
+    ----------
+    file_O2 : Path
+        Name of the .txt file.
+    mode : str, optional
+        Mode of the O2 measurement, either 'liquid' or 'gas'. Default is 'liquid'.
+        'Liquid' assumes data in unit umol[O2]/L, 
+        while 'gas' assumes data in vol%[O2].
 
-    try:
-        temp = data[data_strings['Temp']].to_numpy()
-    except KeyError:
-        temp = 0
+    Returns
+    -------
+    raw_data_dict : dict
+        Dictionary containing the time and oxygen data.
+    """
+    with open(file_O2, encoding='ISO8859') as data_file:
+        lines = data_file.readlines()
+
+    # The file starts with ~25 lines of instrument metadata prefixed by '#';
+    # the measurement table begins at the line starting with 'Date'.
+    header_index = next(i for i, line in enumerate(lines) if line.startswith('Date'))
+    table = pd.read_csv(io.StringIO(''.join(lines[header_index:])), sep='\t')
+
+    # Column labels carry the channel in brackets, so match on the stable parts of the name
+    time_column = next(column for column in table.columns if 'dt (s)' in column and 'Main' in column)
+    value_column = next(column for column in table.columns if 'Oxygen' in column and 'Main' in column)
+    temperature_column = next(column for column in table.columns if 'CompT' in column and 'Temp' in column)
 
     raw_data_dict = {
-        'O2_time_s': time,
-        'O2_data': o2_data,
-        'O2_temperature': temp
+        'time_s': table[time_column].to_numpy(float),
+        'time_unit': 's',
+        'measurement_raw': table[value_column].to_numpy(float),
+        'temperature': table[temperature_column].to_numpy(float),
     }
 
+    if mode == 'liquid':
+        raw_data_dict['measurement_unit'] = 'umol/L'
+    elif mode == 'gas':
+        raw_data_dict['measurement_unit'] = 'vol%'
+    else:
+        raise ValueError("Mode must be either 'liquid' or 'gas'.")
+
     return raw_data_dict
-
-
 
