@@ -29,6 +29,11 @@ from pykes_o2_h2_app.data_parsing.processing_functions_H2_gas import (
     processing_function_H2_gas
 )
 
+from pykes_o2_h2_app.data_parsing.processing_functions_H2_O2 import (
+    raw_data_reading_function_H2_O2,
+    processing_function_H2_O2
+)
+
 from pykes_o2_h2_app.parameters import (
     PROCESSING_PARAMETERS,
     GROUP_MAPPING,
@@ -91,16 +96,27 @@ file_handler_H2_gas =  FileUploadHandler(
                             processing_function = processing_function_H2_gas,
                             )
 
+file_handler_H2_O2 =  FileUploadHandler(
+                            label = "📊 H2 + O2 (same experiment) - Upload Raw Data",
+                            file_type = ["csv", "txt"],
+                            help_text = "Upload the H2 (CSV) and O2 (TXT) raw data files of experiments with measured analyte 'H2+O2'.",
+                            overview_df_experiment_column = "Experiment",
+                            metadata_retrival_function = metadata_retrival_function,
+                            raw_data_reading_function = raw_data_reading_function_H2_O2,
+                            processing_function = processing_function_H2_O2,
+                            )
+
 # -----------------------------------------------------------------------------
 # Data Upload and Home Configuration
 # -----------------------------------------------------------------------------
 
 DATA_UPLOAD_CONFIG = DataUploadConfig(
 
-    file_handlers = [file_handler_O2_liquid, 
-                     file_handler_H2_liquid, 
+    file_handlers = [file_handler_O2_liquid,
+                     file_handler_H2_liquid,
                      file_handler_O2_gas,
-                     file_handler_H2_gas],
+                     file_handler_H2_gas,
+                     file_handler_H2_O2],
     metadata_excel_experiment_column="Experiment",
     group_mapping=GROUP_MAPPING,
     plotting_instruction=PLOTTING_INSTRUCTIONS,
