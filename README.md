@@ -82,7 +82,7 @@ git push origin v0.1.1
 
 ## Processing Overview
 
-The processing pipeline applies experiment-specific offset correction, Savitzky-Golay smoothing, polynomial fitting, and derivative-based rate extraction. O2 gas-phase rates are additionally normalized by catalyst mass to report rates in mmol g^-1 h^-1.
+The processing pipeline applies experiment-specific offset correction, Savitzky-Golay smoothing, polynomial fitting, and derivative-based rate extraction. O2 gas-phase rates are additionally normalized by catalyst mass to report rates in mmol g^-1 h^-1. Before the rate extraction, a linear leakage baseline fitted to the dark period before irradiation is subtracted (see [`docs/baseline_correction.md`](docs/baseline_correction.md)).
 
 ## Contributing
 

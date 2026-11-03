@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.ndimage import median_filter
 
 from pyKES.utilities.offset_correction import offset_correction
 from pyKES.utilities.unit_handler import Quantity
@@ -8,6 +9,17 @@ from pyKES.utilities.calculate_efficiency import calculate_apparent_quantum_yiel
 from pykes_o2_h2_app.parameters import PROCESSING_PARAMETERS
 
 UNIVERSAL_GAS_CONSTANT = 8.31446261815324 # m3 * Pa / (K * mol)
+
+# -----------------------------------------------------------------------------
+# Baseline correction
+# -----------------------------------------------------------------------------
+
+# Shortest accepted dark period for the baseline fit. Without a dark period the
+# leakage, and with it the validity of the experiment, cannot be judged.
+MINIMUM_BASELINE_DURATION_S = 60
+
+# Converts a median absolute deviation into a standard deviation (Gaussian noise)
+MAD_TO_STANDARD_DEVIATION = 1.4826
 
 def metadata_retrival_function(experiment_name: str, 
                                overview_df):
@@ -161,6 +173,164 @@ def calculate_efficiency(metadata_dict: dict,
 
     return apparent_quantum_yield, lth_efficiency
 
+def fit_line(time_s: np.ndarray,
+             data: np.ndarray,
+             start_s: float,
+             end_s: float) -> tuple:
+    '''
+    Fits a straight line to the data points within a time window.
+
+    Parameters
+    ----------
+    time_s : np.ndarray
+        Time of each data point in s.
+    data : np.ndarray
+        Data points.
+    start_s : float
+        Window start in s (inclusive).
+    end_s : float
+        Window end in s (exclusive).
+
+    Returns
+    -------
+    slope : float
+        Slope in data units per s.
+    intercept : float
+        Value of the line at time zero.
+    '''
+
+    in_window = (time_s >= start_s) & (time_s < end_s)
+    slope, intercept = np.polyfit(time_s[in_window], data[in_window], 1)
+
+    return slope, intercept
+
+def remove_spikes(data: np.ndarray) -> tuple:
+    '''
+    Replaces spikes (e.g. from touching the setup) by the running median.
+
+    A point is a spike when it deviates from the median of the points around
+    it by more than the spike threshold in noise standard deviations. The
+    noise is the larger of two robust estimates, from the deviations and from
+    the point-to-point steps; the latter keeps smooth traces, which follow
+    their running median exactly, from a zero noise estimate.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Data points.
+
+    Returns
+    -------
+    despiked_data : np.ndarray
+        Data points with spikes replaced by the running median.
+    is_spike : np.ndarray
+        True for every replaced data point.
+    '''
+
+    parameters = PROCESSING_PARAMETERS['processing_parameters']
+    running_median = median_filter(data, size = parameters['spike_window'], mode = 'nearest')
+    deviation = data - running_median
+    steps = np.diff(data)
+
+    noise = MAD_TO_STANDARD_DEVIATION * max(np.median(np.abs(deviation)),
+                                            np.median(np.abs(steps - np.median(steps))) / np.sqrt(2))
+    is_spike = np.abs(deviation) > parameters['spike_threshold'] * noise
+
+    return np.where(is_spike, running_median, data), is_spike
+
+def determine_baseline_window(irradiation_start_s: float) -> tuple:
+    '''
+    Determines the dark period before irradiation used for the baseline fit.
+
+    The window skips the sensor settling after the log start and ends shortly
+    before irradiation start; both margins are set in PROCESSING_PARAMETERS.
+
+    Parameters
+    ----------
+    irradiation_start_s : float
+        Irradiation start in s after the log start.
+
+    Returns
+    -------
+    start_s : float
+        Window start in s.
+    end_s : float
+        Window end in s.
+    '''
+
+    parameters = PROCESSING_PARAMETERS['processing_parameters']
+    start_s = parameters['baseline_start']
+    end_s = irradiation_start_s - parameters['baseline_end_margin']
+
+    if end_s - start_s < MINIMUM_BASELINE_DURATION_S:
+        raise ValueError(f"Baseline window {start_s:g}-{end_s:g} s is shorter than {MINIMUM_BASELINE_DURATION_S} s: "
+                         f"irradiation start at {irradiation_start_s:g} s leaves too little dark period "
+                         f"to determine the leakage baseline.")
+
+    return start_s, end_s
+
+def measure_baseline_curvature(time_s: np.ndarray,
+                               data: np.ndarray,
+                               start_s: float,
+                               end_s: float) -> float:
+    '''
+    Measures how much the baseline slope changes within the baseline window.
+
+    A leakage that speeds up or slows down cannot be extrapolated linearly
+    into the irradiation period; the slope change between the two window
+    halves quantifies this.
+
+    Parameters
+    ----------
+    time_s : np.ndarray
+        Time of each data point in s.
+    data : np.ndarray
+        Data points.
+    start_s : float
+        Baseline window start in s.
+    end_s : float
+        Baseline window end in s.
+
+    Returns
+    -------
+    slope_change : float
+        Slope of the second half minus slope of the first half, in data units per s.
+    '''
+
+    middle_s = (start_s + end_s) / 2
+    slope_first_half, _ = fit_line(time_s, data, start_s, middle_s)
+    slope_second_half, _ = fit_line(time_s, data, middle_s, end_s)
+
+    return slope_second_half - slope_first_half
+
+def check_baseline(curvature_percent: float,
+                   spike_count: int = 0) -> str:
+    '''
+    Judges whether the baseline is straight enough for a linear correction.
+
+    Parameters
+    ----------
+    curvature_percent : float
+        Baseline slope change within the window in % of the maximum rate.
+    spike_count : int
+        Number of spike points removed from the baseline window.
+
+    Returns
+    -------
+    verdict : str
+        'OK' or 'Check baseline', followed by the curvature and, if any, the
+        number of removed spike points.
+    '''
+
+    limit_percent = PROCESSING_PARAMETERS['processing_parameters']['baseline_curvature_limit']
+    verdict = 'OK' if abs(curvature_percent) <= limit_percent else 'Check baseline'
+
+    details = f"{curvature_percent:.1f} %"
+    if spike_count:
+        details += f", {spike_count} spike point{'s' if spike_count > 1 else ''} removed"
+
+    return f"{verdict} ({details})"
+
 def processing_data(time: Quantity,
                     data: Quantity,
                     start: Quantity,
@@ -169,6 +339,10 @@ def processing_data(time: Quantity,
                     electron_transfer_per_reaction: int,) -> dict:
     '''
     Processing the data and determining the max rate
+
+    A linear baseline fitted to the dark period before irradiation (leakage)
+    is subtracted before the reaction window is cut out. Spikes are removed
+    for the baseline fit only.
 
     Parameters
     ----------
@@ -196,8 +370,18 @@ def processing_data(time: Quantity,
     else:
         offset = Quantity(PROCESSING_PARAMETERS['processing_parameters']['offset'], 's')
 
-    time_reaction, data_reaction = offset_correction(time.unit['s'],
-                                                     data.unit['mol'],
+    time_s = time.unit['s']
+    data_mol = data.unit['mol']
+
+    baseline_start_s, baseline_end_s = determine_baseline_window(start.unit['s'])
+    data_despiked_mol, is_spike = remove_spikes(data_mol)
+    baseline_spike_count = np.count_nonzero(is_spike[(time_s >= baseline_start_s) & (time_s < baseline_end_s)])
+    baseline_slope, baseline_intercept = fit_line(time_s, data_despiked_mol, baseline_start_s, baseline_end_s)
+    baseline_mol = baseline_slope * time_s + baseline_intercept
+    baseline_curvature = measure_baseline_curvature(time_s, data_despiked_mol, baseline_start_s, baseline_end_s)
+
+    time_reaction, data_reaction = offset_correction(time_s,
+                                                     data_mol - baseline_mol,
                                                      offset.unit['s'],
                                                      start.unit['s'],
                                                      end.unit['s'])
@@ -221,6 +405,8 @@ def processing_data(time: Quantity,
                                         / catalyst_mass.unit['g'], 
                                         'umol/g/h')
 
+    baseline_curvature_percent = Quantity(baseline_curvature / result.max_rate.unit['mol/s'], '-').unit['%']
+
     processed_data_dict = {'time_reaction_s': time_reaction_quantity.unit['s'],
                            'time_unit': 's',
                            'data_reaction_umol': data_reaction_quantity.unit['umol'],
@@ -241,6 +427,13 @@ def processing_data(time: Quantity,
                            'light_to_hydrogen_efficiency_unit': '%',
                            'mass_normalized_activity': mass_normalized_activity.unit['umol/g/h'],
                            'mass_normalized_activity_unit': 'umol/g/h',
+                           'data_umol': data.unit['umol'],
+                           'baseline_umol': Quantity(baseline_mol, 'mol').unit['umol'],
+                           'baseline_slope_umol_s': Quantity(baseline_slope, 'mol/s').unit['umol/s'],
+                           'baseline_slope_unit': 'umol/s',
+                           'baseline_curvature_percent': baseline_curvature_percent,
+                           'baseline_curvature_unit': '%',
+                           'baseline_check': check_baseline(baseline_curvature_percent, baseline_spike_count),
                            }
 
     return processed_data_dict

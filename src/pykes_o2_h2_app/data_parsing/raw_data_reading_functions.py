@@ -67,6 +67,10 @@ def reading_O2_file(file_O2, mode = 'liquid'):
     value_column = next(column for column in table.columns if 'Oxygen' in column and 'Main' in column)
     temperature_column = next(column for column in table.columns if 'CompT' in column and 'Temp' in column)
 
+    # Interrupted logs end with rows lacking the main channel (empty rows, extra
+    # samples of other channels), which would otherwise become NaN measurements
+    table = table.dropna(subset = [time_column])
+
     raw_data_dict = {
         'time_s': table[time_column].to_numpy(float),
         'time_unit': 's',
