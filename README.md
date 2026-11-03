@@ -10,7 +10,7 @@ The app provides three main steps:
 2. Inspect time-series plots for raw, smoothed, and rate-derived signals.
 3. Review analysis results such as extracted maximum rates.
 
-Supported uploads include O2 and H2 data for liquid-phase and O2 data for gas-phase measurements. Raw files are expected as CSV or TXT inputs, and the app uses the experiment metadata table to map each file to the correct processing function.
+Supported uploads include O2 and H2 data for liquid-phase and O2 data for gas-phase measurements. Raw files are expected as CSV or TXT inputs, and the app uses the experiment metadata table to map each file to the correct processing function. H2 and O2 data recorded in the same experiment can be processed together from one metadata row (measured analyte `H2+O2`) via the H2 + O2 uploader.
 
 ## Requirements
 
@@ -76,6 +76,7 @@ git push origin v0.1.1
 
 - [`src/pykes_o2_h2_app/data_parsing/`](src/pykes_o2_h2_app/data_parsing/) contains the raw readers and signal-processing helpers.
 - [`src/pykes_o2_h2_app/streamlit_app/`](src/pykes_o2_h2_app/streamlit_app/) contains the Streamlit entrypoint and pages.
+- [`src/tests/`](src/tests/) contains tests on synthetic data (run with `pytest`).
 - [`data/`](data/) stores example measurement files used for local development and testing.
 - [`deploy/`](deploy/) contains the static browser bundle entrypoint and build script.
 
