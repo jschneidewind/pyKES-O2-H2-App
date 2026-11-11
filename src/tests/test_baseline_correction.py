@@ -5,6 +5,7 @@ from pykes_o2_h2_app.data_parsing.general_processing_functions import (
     determine_baseline_window,
     measure_baseline_curvature,
     check_baseline,
+    get_baseline_window,
 )
 from pykes_o2_h2_app.data_parsing.processing_functions_O2_liquid import processing_function_O2_liquid
 
@@ -149,3 +150,76 @@ def test_check_flags_only_curved_baselines():
 def test_short_dark_period_is_rejected():
     with pytest.raises(ValueError, match = 'dark period'):
         determine_baseline_window(irradiation_start_s = 200)
+
+# -----------------------------------------------------------------------------
+# Operator-set baseline window
+# -----------------------------------------------------------------------------
+
+# Extra drift at the start of the dark period (e.g. a slow sensor recovery) that
+# stops before irradiation, tilting the automatic window (180-570 s)
+EXTRA_DRIFT_UMOL_L_S = 0.01
+EXTRA_DRIFT_END_S = 360
+
+# Operator windows: the undisturbed rest of the dark period before irradiation,
+# and the dark period after it
+WINDOW_BEFORE_IRRADIATION_S = (400, 570)
+WINDOW_AFTER_IRRADIATION_S = (2450, 2990)
+
+def with_baseline_window(start_s, end_s) -> dict:
+    '''
+    Builds the overview row of the synthetic experiment with an operator-set baseline window.
+    '''
+
+    return {**build_metadata(),
+            'Pyroscience Baseline start [s]': start_s,
+            'Pyroscience Baseline end [s]': end_s}
+
+def simulate_raw_data_with_early_drift() -> dict:
+    '''
+    Simulates the synthetic experiment with an extra drift at the start of the dark period.
+    '''
+
+    raw_data_dict = simulate_raw_data()
+    raw_data_dict['measurement_raw'] += EXTRA_DRIFT_UMOL_L_S * np.minimum(raw_data_dict['time_s'], EXTRA_DRIFT_END_S)
+
+    return raw_data_dict
+
+def test_operator_window_avoids_a_disturbed_dark_period():
+    automatic = processing_function_O2_liquid(simulate_raw_data_with_early_drift(), build_metadata())
+    operator = processing_function_O2_liquid(simulate_raw_data_with_early_drift(),
+                                             with_baseline_window(*WINDOW_BEFORE_IRRADIATION_S))
+
+    # The drift makes the automatic baseline wrong, which the operator window avoids
+    assert automatic['baseline_slope_umol_s'] != pytest.approx(convert_to_umol_s(LEAKAGE_RATE_UMOL_L_S),
+                                                               rel = RATE_RELATIVE_TOLERANCE)
+    assert operator['baseline_slope_umol_s'] == pytest.approx(convert_to_umol_s(LEAKAGE_RATE_UMOL_L_S),
+                                                              rel = RATE_RELATIVE_TOLERANCE)
+    assert operator['max_rate_umol_s'] == pytest.approx(convert_to_umol_s(PRODUCTION_RATE_UMOL_L_S),
+                                                        rel = RATE_RELATIVE_TOLERANCE)
+    assert operator['baseline_window'] == '400-570 s (operator)'
+
+def test_operator_window_may_follow_the_irradiation():
+    processed_data_dict = processing_function_O2_liquid(simulate_raw_data(),
+                                                        with_baseline_window(*WINDOW_AFTER_IRRADIATION_S))
+
+    assert processed_data_dict['baseline_slope_umol_s'] == pytest.approx(convert_to_umol_s(LEAKAGE_RATE_UMOL_L_S),
+                                                                         rel = RATE_RELATIVE_TOLERANCE)
+    assert processed_data_dict['max_rate_umol_s'] == pytest.approx(convert_to_umol_s(PRODUCTION_RATE_UMOL_L_S),
+                                                                   rel = RATE_RELATIVE_TOLERANCE)
+
+def test_empty_window_cells_keep_the_automatic_window():
+    processed_data_dict = processing_function_O2_liquid(simulate_raw_data(), with_baseline_window(np.nan, np.nan))
+
+    assert processed_data_dict['baseline_window'] == '180-570 s (automatic)'
+
+def test_window_overlapping_the_irradiation_is_rejected():
+    with pytest.raises(ValueError, match = 'overlaps the irradiation'):
+        processing_function_O2_liquid(simulate_raw_data(), with_baseline_window(500, 700))
+
+def test_window_with_too_little_logged_data_is_rejected():
+    with pytest.raises(ValueError, match = 'logged data'):
+        processing_function_O2_liquid(simulate_raw_data(), with_baseline_window(2950, 3100))
+
+def test_half_set_window_is_rejected():
+    with pytest.raises(ValueError, match = 'Set both'):
+        get_baseline_window(with_baseline_window(400, np.nan), 'Pyroscience')

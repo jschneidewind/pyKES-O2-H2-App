@@ -164,6 +164,7 @@ PLOTTING_INSTRUCTIONS = {
                                                 'format': '.5f'},
         'Baseline slope (umol/s)': {'result': 'processed_data/baseline_slope_umol_s'},
         'Baseline check': {'result': 'processed_data/baseline_check'},
+        'Baseline window': {'result': 'processed_data/baseline_window'},
         'H2 max. rate (umol/s)': {'result': 'processed_data/H2/max_rate_umol_s'},
         'O2 max. rate (umol/s)': {'result': 'processed_data/O2/max_rate_umol_s'},
         'H2 max. rate crosscheck (umol/s)': {'result': 'processed_data/H2/max_rate_crosscheck_umol_s'},
@@ -184,5 +185,7 @@ PLOTTING_INSTRUCTIONS = {
         'O2 baseline slope (umol/s)': {'result': 'processed_data/O2/baseline_slope_umol_s'},
         'H2 baseline check': {'result': 'processed_data/H2/baseline_check'},
         'O2 baseline check': {'result': 'processed_data/O2/baseline_check'},
+        'H2 baseline window': {'result': 'processed_data/H2/baseline_window'},
+        'O2 baseline window': {'result': 'processed_data/O2/baseline_window'},
     },
 }

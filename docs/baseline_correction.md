@@ -1,6 +1,6 @@
 # Baseline correction
 
-Every trace (H2 and O2, liquid and gas phase) is corrected for a linear baseline before the maximum rate is determined. The baseline is fitted to the dark period before irradiation and extrapolated over the whole measurement. The code lives in [`general_processing_functions.py`](../src/pykes_o2_h2_app/data_parsing/general_processing_functions.py) (`processing_data` and the helpers above it).
+Every trace (H2 and O2, liquid and gas phase) is corrected for a linear baseline before the maximum rate is determined. The baseline is fitted to a dark period, by default the one before irradiation, and extrapolated over the whole measurement. The operator can choose the window per sensor in the overview sheet (see [Operator-set window](#operator-set-window)). The code lives in [`general_processing_functions.py`](../src/pykes_o2_h2_app/data_parsing/general_processing_functions.py) (`processing_data` and the helpers above it).
 
 ## Why
 
@@ -10,12 +10,28 @@ A linear baseline is physically justified as long as the O2 inside the reactor s
 
 ## How
 
-1. **Baseline window.** From `baseline_start` (180 s) after the log start to `baseline_end_margin` (30 s) before irradiation start, using each sensor's own irradiation start (`Unisense Irradiation start [s]` for H2, `Pyroscience Irradiation start [s]` for O2). The first 3 min are skipped because the sensors settle after the log start; including them inflated the AE-915 O2 baseline from 26 % to 36 % of the rate.
+1. **Baseline window.** Unless the operator sets one, from `baseline_start` (180 s) after the log start to `baseline_end_margin` (30 s) before irradiation start, using each sensor's own irradiation start (`Unisense Irradiation start [s]` for H2, `Pyroscience Irradiation start [s]` for O2). The first 3 min are skipped because the sensors settle after the log start; including them inflated the AE-915 O2 baseline from 26 % to 36 % of the rate.
 2. **Spike removal.** Short spikes, e.g. from touching the setup, would tilt the fitted line: a single 160 mV spike of the H2 sensor shifts a gas-phase baseline by up to the whole maximum rate. Before the fit, every point that deviates from the median of the `spike_window` (31) points around it by more than `spike_threshold` (8) noise standard deviations is replaced by that median. The noise is the larger of two robust estimates, from these deviations and from the point-to-point steps (smooth traces follow their running median exactly, which would give zero noise). The threshold lies between the noise and any relevant spike: in the baseline windows of the real traces, thresholds of 5 or less marked normal noise points (9 points at 3), 6 and above none, while a 160 mV spike is 1400–2400 noise standard deviations. A spike just below 8 shifts the slope by less than its noise scatter (about 0.7 times at the window edge), and 8 is also the gross-outlier threshold of pyKES; any value from 6 to 20 gives the same results on these traces. Spikes up to about 15 samples long, including a short over- and undershoot, are removed. Only the fit uses the despiked data; the stored and plotted trace keeps the spikes.
 3. **Fit and subtraction.** A straight line is fitted to the converted data (mol) in the window and subtracted from the whole trace. The offset correction and the maximum-rate extraction then run on the corrected trace, so the maximum rate drops by about the baseline slope.
 4. **Minimum dark period.** If the window is shorter than 60 s, processing fails with an error: without a dark period the leakage, and with it the validity of the experiment, cannot be judged.
 
 The window margins, the spike parameters and the curvature limit below are set in `PROCESSING_PARAMETERS` in [`parameters.py`](../src/pykes_o2_h2_app/parameters.py).
+
+## Operator-set window
+
+The automatic window does not suit every run, e.g. when the sensor is still recovering at the start of the dark period or the leak changes during it. The window can then be set per sensor in the overview sheet, in seconds after the log start of that sensor:
+
+| Sensor | Columns |
+| --- | --- |
+| O2 (PyroScience) | `Pyroscience Baseline start [s]`, `Pyroscience Baseline end [s]` |
+| H2 (Unisense) | `Unisense Baseline start [s]`, `Unisense Baseline end [s]` |
+
+- Both cells empty, or the columns missing, keeps the automatic window. Setting only one of the two is an error.
+- The window may lie before or after the irradiation, but must not overlap it, since the reaction would then be fitted as leakage.
+- It has to cover at least 60 s of logged data, as the automatic window does.
+- The spike removal and the curvature check work on the chosen window in the same way.
+
+In combined `H2+O2` experiments each trace uses the columns of its own sensor, so the H2 and O2 windows can differ. In gas-phase measurements a window right after the irradiation also contains gas that is still transferring into the headspace: H2 and O2 are produced in the liquid and keep moving into the gas phase for a while after the lamp is switched off. In AE-918 the gas-phase H2 kept rising at 3.6·10⁻⁴ µmol/s after irradiation (37 % of its maximum rate, visible in the time series `Amount (H2)`), and the O2 slope there (3.4·10⁻⁴ µmol/s) was larger than the leak before irradiation (2.4·10⁻⁴ µmol/s). A window after the irradiation therefore only measures the leak once this transfer has died down; otherwise the dark period before irradiation is the better choice.
 
 ## Curvature check
 
@@ -32,8 +48,9 @@ R² is not used on purpose: a flat baseline (no leak) has R² ≈ 0 because it c
 | Baseline slope | `processed_data/baseline_slope_umol_s` | results table `Baseline slope (umol/s)` |
 | Slope change in % of max. rate | `processed_data/baseline_curvature_percent` | part of `Baseline check` |
 | Verdict and removed spike points | `processed_data/baseline_check` | results table `Baseline check` |
+| Window used, e.g. `180-840 s (automatic)` | `processed_data/baseline_window` (numbers in `baseline_window_start_s`, `baseline_window_end_s`) | results table `Baseline window` |
 
-Combined `H2+O2` experiments store the same values under `processed_data/H2/...` and `processed_data/O2/...`, shown as `Amount (H2)`, `Baseline (O2)`, `O2 baseline check` and so on. Plotting `Amount` together with `Baseline` shows how well the line follows the dark period and where it is extrapolated.
+Combined `H2+O2` experiments store the same values under `processed_data/H2/...` and `processed_data/O2/...`, shown as `Amount (H2)`, `Baseline (O2)`, `O2 baseline check`, `H2 baseline window` and so on. Plotting `Amount` together with `Baseline` shows how well the line follows the dark period and where it is extrapolated.
 
 ## Validation
 
@@ -50,7 +67,7 @@ Real data with the default parameters (baseline slope in % of the uncorrected ma
 - In AE-915 the leak before irradiation (3.8·10⁻⁴ vol%/min) matches the slope after irradiation (3.7·10⁻⁴ vol%/min), and the corrected H2:O2 rate ratio is 2.11 instead of 1.55 uncorrected, close to the expected 2.
 - AE-914 keeps rising at the same slope after the lamp is off; its leak during irradiation is about a third faster than before. AE-902 (liquid) still accelerates at irradiation start, because the leaked O2 reaches the liquid only with a delay. Neither can be corrected reliably, and both are flagged.
 
-The tests in [`src/tests/test_baseline_correction.py`](../src/tests/test_baseline_correction.py) check on synthetic data that a known leak (plus a sensor settling transient) is removed from the rate, that a spike with undershoot in the dark period does not change the rate and is reported, that the curvature measure is exact for a parabola, that the check flags only curved baselines and that a too-short dark period is rejected.
+The tests in [`src/tests/test_baseline_correction.py`](../src/tests/test_baseline_correction.py) check on synthetic data that a known leak (plus a sensor settling transient) is removed from the rate, that a spike with undershoot in the dark period does not change the rate and is reported, that the curvature measure is exact for a parabola, that the check flags only curved baselines and that a too-short dark period is rejected. For the operator-set window they check that it avoids a disturbed part of the dark period, that it may follow the irradiation, that empty cells keep the automatic window, and that half-set windows, windows overlapping the irradiation and windows with too little logged data are rejected.
 
 ## Limitations
 

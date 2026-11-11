@@ -3,7 +3,7 @@ from pathlib import Path
 from pyKES.utilities.unit_handler import Quantity
 
 from pykes_o2_h2_app.data_parsing.raw_data_reading_functions import reading_H2_file
-from pykes_o2_h2_app.data_parsing.general_processing_functions import processing_data, convert_umol_L_to_mol
+from pykes_o2_h2_app.data_parsing.general_processing_functions import processing_data, get_baseline_window, convert_umol_L_to_mol
 
 def raw_data_reading_function_H2_liquid(directory: Path, metadata_dict) -> dict:
     '''
@@ -62,6 +62,7 @@ def processing_function_H2_liquid(raw_data_dict: dict, metadata_dict: dict) -> d
         end = Quantity(metadata_dict['Unisense Irradiation end [s]'], 's'),
         metadata_dict = metadata_dict,
         electron_transfer_per_reaction = 2,  # H2 evolution involves 2 electrons
+        baseline_window = get_baseline_window(metadata_dict, 'Unisense'),
     )
 
     return processed_H2

@@ -21,6 +21,13 @@ MINIMUM_BASELINE_DURATION_S = 60
 # Converts a median absolute deviation into a standard deviation (Gaussian noise)
 MAD_TO_STANDARD_DEVIATION = 1.4826
 
+# Overview columns of the operator-set baseline window, per sensor (each logger has its
+# own time axis). Empty cells, or missing columns, keep the automatic window.
+BASELINE_WINDOW_COLUMNS = {
+    'Pyroscience': ('Pyroscience Baseline start [s]', 'Pyroscience Baseline end [s]'),
+    'Unisense': ('Unisense Baseline start [s]', 'Unisense Baseline end [s]'),
+}
+
 def metadata_retrival_function(experiment_name: str, 
                                overview_df):
     '''
@@ -269,6 +276,96 @@ def determine_baseline_window(irradiation_start_s: float) -> tuple:
 
     return start_s, end_s
 
+def is_empty_cell(value) -> bool:
+    '''
+    Tells whether an overview cell was left empty (missing, NaN or blank text).
+    '''
+
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+
+    return bool(np.isnan(value)) if isinstance(value, float) else False
+
+def get_baseline_window(metadata_dict: dict, sensor: str) -> tuple | None:
+    '''
+    Reads the operator-set baseline window of one sensor from the overview row.
+
+    Parameters
+    ----------
+    metadata_dict : dict
+        Metadata of the experiment, as returned by the metadata retrieval function.
+    sensor : str
+        'Pyroscience' (O2) or 'Unisense' (H2), selecting the columns in BASELINE_WINDOW_COLUMNS.
+
+    Returns
+    -------
+    baseline_window : tuple of Quantity or None
+        Window start and end (quantity objects, time), or None if both cells are
+        empty, which keeps the automatic window.
+    '''
+
+    start_column, end_column = BASELINE_WINDOW_COLUMNS[sensor]
+    start, end = metadata_dict.get(start_column), metadata_dict.get(end_column)
+
+    if is_empty_cell(start) and is_empty_cell(end):
+        return None
+    if is_empty_cell(start) or is_empty_cell(end):
+        raise ValueError(f"Set both '{start_column}' and '{end_column}', "
+                         f"or leave both empty for the automatic baseline window.")
+
+    return Quantity(float(start), 's'), Quantity(float(end), 's')
+
+def check_baseline_window(start_s: float,
+                          end_s: float,
+                          irradiation_start_s: float,
+                          irradiation_end_s: float,
+                          time_s: np.ndarray) -> tuple:
+    '''
+    Validates an operator-set baseline window.
+
+    The window may lie before or after the irradiation, but not overlap it (the
+    reaction would be fitted as leakage), and must cover at least the minimum dark
+    period of logged data.
+
+    Parameters
+    ----------
+    start_s : float
+        Window start in s after the log start.
+    end_s : float
+        Window end in s after the log start.
+    irradiation_start_s : float
+        Irradiation start in s after the log start.
+    irradiation_end_s : float
+        Irradiation end in s after the log start.
+    time_s : np.ndarray
+        Time of each data point in s.
+
+    Returns
+    -------
+    start_s : float
+        Window start in s.
+    end_s : float
+        Window end in s.
+    '''
+
+    if end_s <= start_s:
+        raise ValueError(f"Baseline window {start_s:g}-{end_s:g} s: the end must come after the start.")
+
+    if start_s < irradiation_end_s and end_s > irradiation_start_s:
+        raise ValueError(f"Baseline window {start_s:g}-{end_s:g} s overlaps the irradiation "
+                         f"({irradiation_start_s:g}-{irradiation_end_s:g} s); it has to lie in a dark period "
+                         f"before or after it.")
+
+    covered_s = min(end_s, time_s[-1]) - max(start_s, time_s[0])
+    if covered_s < MINIMUM_BASELINE_DURATION_S:
+        raise ValueError(f"Baseline window {start_s:g}-{end_s:g} s covers {max(covered_s, 0):g} s of logged data "
+                         f"({time_s[0]:g}-{time_s[-1]:g} s), less than the {MINIMUM_BASELINE_DURATION_S} s needed "
+                         f"to determine the leakage baseline.")
+
+    return start_s, end_s
+
 def measure_baseline_curvature(time_s: np.ndarray,
                                data: np.ndarray,
                                start_s: float,
@@ -336,13 +433,13 @@ def processing_data(time: Quantity,
                     start: Quantity,
                     end: Quantity,
                     metadata_dict: dict,
-                    electron_transfer_per_reaction: int,) -> dict:
+                    electron_transfer_per_reaction: int,
+                    baseline_window: tuple | None = None) -> dict:
     '''
     Processing the data and determining the max rate
 
-    A linear baseline fitted to the dark period before irradiation (leakage)
-    is subtracted before the reaction window is cut out. Spikes are removed
-    for the baseline fit only.
+    A linear baseline fitted to a dark period (leakage) is subtracted before
+    the reaction window is cut out. Spikes are removed for the baseline fit only.
 
     Parameters
     ----------
@@ -358,6 +455,9 @@ def processing_data(time: Quantity,
         Metadata of the experiment, as returned by the metadata retrieval function.
     electron_transfer_per_reaction : int
         Number of electrons transferred per reaction (e.g., 4 for O2 evolution, 2 for H2 evolution)
+    baseline_window : tuple of Quantity, optional
+        Operator-set baseline window (start, end), as returned by get_baseline_window.
+        None uses the automatic window before irradiation (determine_baseline_window).
 
     Returns
     -------
@@ -373,7 +473,17 @@ def processing_data(time: Quantity,
     time_s = time.unit['s']
     data_mol = data.unit['mol']
 
-    baseline_start_s, baseline_end_s = determine_baseline_window(start.unit['s'])
+    if baseline_window is None:
+        baseline_start_s, baseline_end_s = determine_baseline_window(start.unit['s'])
+        baseline_window_source = 'automatic'
+    else:
+        baseline_start_s, baseline_end_s = check_baseline_window(baseline_window[0].unit['s'],
+                                                                 baseline_window[1].unit['s'],
+                                                                 start.unit['s'],
+                                                                 end.unit['s'],
+                                                                 time_s)
+        baseline_window_source = 'operator'
+
     data_despiked_mol, is_spike = remove_spikes(data_mol)
     baseline_spike_count = np.count_nonzero(is_spike[(time_s >= baseline_start_s) & (time_s < baseline_end_s)])
     baseline_slope, baseline_intercept = fit_line(time_s, data_despiked_mol, baseline_start_s, baseline_end_s)
@@ -434,6 +544,10 @@ def processing_data(time: Quantity,
                            'baseline_curvature_percent': baseline_curvature_percent,
                            'baseline_curvature_unit': '%',
                            'baseline_check': check_baseline(baseline_curvature_percent, baseline_spike_count),
+                           'baseline_window_start_s': float(baseline_start_s),
+                           'baseline_window_end_s': float(baseline_end_s),
+                           'baseline_window_unit': 's',
+                           'baseline_window': f"{baseline_start_s:g}-{baseline_end_s:g} s ({baseline_window_source})",
                            }
 
     return processed_data_dict

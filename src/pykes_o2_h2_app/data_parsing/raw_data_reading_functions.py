@@ -1,15 +1,5 @@
-import numpy as np
 import pandas as pd
 import io
-
-# PyroScience column labels carry their channel in brackets, so columns are
-# matched on the stable parts of the label
-
-# Channel of a Workbench 'Recalculate Oxygen' process step, e.g. '%O2 [P1 Recalc O2]'
-RECALCULATED_O2_CHANNEL = 'Recalc O2]'
-
-# PT100 temperature sensor logged as its own channel, e.g. 'Sample Temp. (°C) [ T1]'
-TEMPERATURE_SENSOR_CHANNEL = 'T1]'
 
 def reading_H2_file(file_H2, mode = 'liquid'):
     '''
@@ -50,9 +40,6 @@ def reading_O2_file(file_O2, mode = 'liquid'):
     """
     Load a PyroScience Workbench oxygen log.
 
-    Reads both direct logs of the sensor channel and exports of a Workbench
-    'Recalculate Oxygen' process step.
-
     Parameters
     ----------
     file_O2 : Path
@@ -75,10 +62,21 @@ def reading_O2_file(file_O2, mode = 'liquid'):
     header_index = next(i for i, line in enumerate(lines) if line.startswith('Date'))
     table = pd.read_csv(io.StringIO(''.join(lines[header_index:])), sep='\t')
 
-    if any(RECALCULATED_O2_CHANNEL in column for column in table.columns):
-        raw_data_dict = read_recalculated_O2_table(table)
-    else:
-        raw_data_dict = read_logged_O2_table(table)
+    # Column labels carry the channel in brackets, so match on the stable parts of the name
+    time_column = next(column for column in table.columns if 'dt (s)' in column and 'Main' in column)
+    value_column = next(column for column in table.columns if 'Oxygen' in column and 'Main' in column)
+    temperature_column = next(column for column in table.columns if 'CompT' in column and 'Temp' in column)
+
+    # Interrupted logs end with rows lacking the main channel (empty rows, extra
+    # samples of other channels), which would otherwise become NaN measurements
+    table = table.dropna(subset = [time_column])
+
+    raw_data_dict = {
+        'time_s': table[time_column].to_numpy(float),
+        'time_unit': 's',
+        'measurement_raw': table[value_column].to_numpy(float),
+        'temperature': table[temperature_column].to_numpy(float),
+    }
 
     if mode == 'liquid':
         raw_data_dict['measurement_unit'] = 'umol/L'
@@ -88,85 +86,4 @@ def reading_O2_file(file_O2, mode = 'liquid'):
         raise ValueError("Mode must be either 'liquid' or 'gas'.")
 
     return raw_data_dict
-
-
-def read_logged_O2_table(table: pd.DataFrame) -> dict:
-    """
-    Extract the O2 trace from a direct log of the oxygen sensor channel.
-
-    The oxygen values are in the sensor's main channel ('Oxygen (%O2) [A Ch.1 Main]'),
-    with the compensation temperature sampled alongside ('[A Ch.1 CompT]').
-
-    Parameters
-    ----------
-    table : pd.DataFrame
-        Measurement table of the PyroScience file.
-
-    Returns
-    -------
-    raw_data_dict : dict
-        Time, oxygen and temperature data, without the measurement unit.
-    """
-    time_column = next(column for column in table.columns if 'dt (s)' in column and 'Main' in column)
-    value_column = next(column for column in table.columns if 'Oxygen' in column and 'Main' in column)
-    temperature_column = next(column for column in table.columns if 'CompT' in column and 'Temp' in column)
-
-    # Interrupted logs end with rows lacking the main channel (empty rows, extra
-    # samples of other channels), which would otherwise become NaN measurements
-    table = table.dropna(subset = [time_column])
-
-    return {
-        'time_s': table[time_column].to_numpy(float),
-        'time_unit': 's',
-        'measurement_raw': table[value_column].to_numpy(float),
-        'temperature': table[temperature_column].to_numpy(float),
-    }
-
-
-def read_recalculated_O2_table(table: pd.DataFrame) -> dict:
-    """
-    Extract the O2 trace from the export of a Workbench 'Recalculate Oxygen' process step.
-
-    The recalculated oxygen values have their own channel ('%O2 [P1 Recalc O2]').
-    The temperature comes from the PT100 sensor channel ('[ T1]'), which logs on
-    its own clock (twice per O2 sample in AE-918), so its rows do not line up
-    with the O2 rows and it is interpolated onto the O2 times.
-
-    Parameters
-    ----------
-    table : pd.DataFrame
-        Measurement table of the PyroScience file.
-
-    Returns
-    -------
-    raw_data_dict : dict
-        Time, oxygen and temperature data, without the measurement unit.
-    """
-    recalculated_columns = [column for column in table.columns if RECALCULATED_O2_CHANNEL in column]
-    time_column = next(column for column in recalculated_columns if 'dt (s)' in column)
-
-    # Besides the oxygen values the channel only holds their date, time and dt (s),
-    # so the value column is found without depending on the exported unit
-    value_column = next(column for column in recalculated_columns
-                        if not column.lstrip().startswith(('Date', 'Time', 'dt (s)')))
-
-    temperature_time_column = next(column for column in table.columns
-                                   if 'dt (s)' in column and TEMPERATURE_SENSOR_CHANNEL in column)
-    temperature_column = next(column for column in table.columns
-                              if 'Temp' in column and TEMPERATURE_SENSOR_CHANNEL in column)
-
-    # Each channel leaves its cells empty once its own samples run out
-    oxygen = table[[time_column, value_column]].dropna()
-    temperature = table[[temperature_time_column, temperature_column]].dropna()
-
-    time_s = oxygen[time_column].to_numpy(float)
-
-    return {
-        'time_s': time_s,
-        'time_unit': 's',
-        'measurement_raw': oxygen[value_column].to_numpy(float),
-        'temperature': np.interp(time_s,
-                                 temperature[temperature_time_column].to_numpy(float),
-                                 temperature[temperature_column].to_numpy(float)),
-    }
 
